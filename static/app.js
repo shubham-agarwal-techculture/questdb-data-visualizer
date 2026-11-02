@@ -7,12 +7,81 @@ const typeSelect = document.querySelector("#instrument-type");
 const strikeLabel = document.querySelector("#strike-label");
 const strikeSelect = document.querySelector("#strike");
 const statusEl = document.querySelector("#status");
+const clearRangeButton = document.querySelector("#clear-range");
 const chartEl = document.querySelector("#chart");
 
 const KIND_LABEL = { spot: "Spot", futures: "Futures", options: "Options" };
 let tables = [];
 let currentKind = "spot";
 let loadToken = 0;
+let bars = [];
+let baseStatus = "";
+let rangeStart = null;
+let rangeEnd = null;
+let chartLoading = false;
+
+const rangeHighlight = {
+  _from: null,
+  _to: null,
+  _chart: null,
+  _requestUpdate: null,
+  _x1: null,
+  _x2: null,
+  attached(param) {
+    this._chart = param.chart;
+    this._requestUpdate = param.requestUpdate;
+  },
+  detached() {
+    this._chart = null;
+    this._requestUpdate = null;
+  },
+  setRange(from, to) {
+    this._from = from;
+    this._to = to;
+    if (this._requestUpdate) this._requestUpdate();
+  },
+  updateAllViews() {
+    this._x1 = null;
+    this._x2 = null;
+    if (!this._chart || this._from == null || this._to == null) return;
+    const scale = this._chart.timeScale();
+    const xLeft = scale.logicalToCoordinate(Math.min(this._from, this._to));
+    const xRight = scale.logicalToCoordinate(Math.max(this._from, this._to));
+    if (xLeft == null || xRight == null) return;
+    const half = scale.options().barSpacing / 2;
+    this._x1 = xLeft - half;
+    this._x2 = xRight + half;
+  },
+  paneViews() {
+    const source = this;
+    return [
+      {
+        zOrder() {
+          return "bottom";
+        },
+        renderer() {
+          return {
+            draw(target) {
+              if (source._x1 == null || source._x2 == null) return;
+              target.useBitmapCoordinateSpace((scope) => {
+                const ctx = scope.context;
+                const horizontal = scope.horizontalPixelRatio;
+                const x = Math.round(Math.min(source._x1, source._x2) * horizontal);
+                const width = Math.max(1, Math.round(Math.abs(source._x2 - source._x1) * horizontal));
+                ctx.fillStyle = "rgba(66, 133, 244, 0.2)";
+                ctx.fillRect(x, 0, width, scope.bitmapSize.height);
+                ctx.fillStyle = "rgba(144, 180, 255, 0.95)";
+                const edge = Math.max(1, Math.round(horizontal));
+                ctx.fillRect(x, 0, edge, scope.bitmapSize.height);
+                ctx.fillRect(x + width - edge, 0, edge, scope.bitmapSize.height);
+              });
+            },
+          };
+        },
+      },
+    ];
+  },
+};
 
 const chart = LightweightCharts.createChart(chartEl, {
   autoSize: true,
@@ -56,6 +125,8 @@ volume.priceScale().applyOptions({
   scaleMargins: { top: 0.78, bottom: 0 },
 });
 
+candles.attachPrimitive(rangeHighlight);
+
 function pad(value) {
   return String(value).padStart(2, "0");
 }
@@ -87,6 +158,63 @@ function formatTick(time, tickMarkType) {
 function setStatus(message, isError) {
   statusEl.textContent = message;
   statusEl.classList.toggle("error", Boolean(isError));
+}
+
+function updateClearButton() {
+  clearRangeButton.disabled = rangeStart == null;
+}
+
+function clearRange() {
+  rangeStart = null;
+  rangeEnd = null;
+  rangeHighlight.setRange(null, null);
+  updateClearButton();
+}
+
+function deleteRange() {
+  if (rangeStart == null) return;
+  clearRange();
+  renderStatus();
+}
+
+function renderStatus() {
+  if (rangeStart == null || !bars.length) {
+    setStatus(baseStatus);
+    return;
+  }
+  const from = rangeEnd == null ? rangeStart : Math.min(rangeStart, rangeEnd);
+  const to = rangeEnd == null ? rangeStart : Math.max(rangeStart, rangeEnd);
+  const start = formatExchange(bars[from].time);
+  const end = formatExchange(bars[to].time);
+  if (rangeEnd == null) {
+    setStatus(`${baseStatus} · start ${start} · click the end candle`);
+    return;
+  }
+  const count = to - from + 1;
+  setStatus(`${baseStatus} · ${count.toLocaleString()} selected · ${start} → ${end}`);
+}
+
+function barIndexAt(param) {
+  if (!bars.length || typeof param.logical !== "number" || !Number.isFinite(param.logical)) {
+    return null;
+  }
+  const index = Math.round(param.logical);
+  if (index < 0 || index >= bars.length) return null;
+  return index;
+}
+
+function selectCandle(index) {
+  if (rangeStart == null || rangeEnd != null) {
+    rangeStart = index;
+    rangeEnd = null;
+  } else {
+    rangeEnd = index;
+  }
+  const from = rangeEnd == null ? rangeStart : Math.min(rangeStart, rangeEnd);
+  const to = rangeEnd == null ? rangeStart : Math.max(rangeStart, rangeEnd);
+  rangeHighlight.setRange(from, to);
+  updateClearButton();
+  renderStatus();
 }
 
 function fillSelect(select, values, labelOf) {
@@ -180,60 +308,71 @@ function contractReady() {
 
 async function loadChart() {
   const token = ++loadToken;
-  if (!tableSelect.value || !contractReady()) {
-    candles.setData([]);
-    volume.setData([]);
-    setStatus("Choose a contract to plot.");
-    return;
-  }
+  chartLoading = true;
+  clearRange();
+  try {
+    if (!tableSelect.value || !contractReady()) {
+      bars = [];
+      baseStatus = "";
+      candles.setData([]);
+      volume.setData([]);
+      setStatus("Choose a contract to plot.");
+      return;
+    }
 
-  setStatus("Loading candles…");
-  const params = new URLSearchParams({
-    table: tableSelect.value,
-    interval: intervalSelect.value,
-  });
-  if (currentKind !== "spot") params.set("expiry", expirySelect.value);
-  if (currentKind === "options") {
-    params.set("instrument_type", typeSelect.value);
-    params.set("strike", strikeSelect.value);
-  }
+    setStatus("Loading candles…");
+    const params = new URLSearchParams({
+      table: tableSelect.value,
+      interval: intervalSelect.value,
+    });
+    if (currentKind !== "spot") params.set("expiry", expirySelect.value);
+    if (currentKind === "options") {
+      params.set("instrument_type", typeSelect.value);
+      params.set("strike", strikeSelect.value);
+    }
 
-  const response = await fetch(`/api/ohlc?${params}`);
-  if (token !== loadToken) return;
-  if (!response.ok) {
-    const detail = await response.text();
+    const response = await fetch(`/api/ohlc?${params}`);
     if (token !== loadToken) return;
-    setStatus(detail, true);
-    return;
-  }
-  const payload = await response.json();
-  if (token !== loadToken) return;
+    if (!response.ok) {
+      const detail = await response.text();
+      if (token !== loadToken) return;
+      setStatus(detail, true);
+      return;
+    }
+    const payload = await response.json();
+    if (token !== loadToken) return;
 
-  candles.setData(
-    payload.candles.map((bar) => ({
-      time: bar.time,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-    }))
-  );
-  volume.setData(
-    payload.candles.map((bar) => ({
-      time: bar.time,
-      value: bar.volume,
-      color: bar.close >= bar.open ? "rgba(38, 166, 154, 0.45)" : "rgba(239, 83, 80, 0.45)",
-    }))
-  );
-  chart.timeScale().fitContent();
+    bars = payload.candles;
+    candles.setData(
+      payload.candles.map((bar) => ({
+        time: bar.time,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      }))
+    );
+    volume.setData(
+      payload.candles.map((bar) => ({
+        time: bar.time,
+        value: bar.volume,
+        color: bar.close >= bar.open ? "rgba(38, 166, 154, 0.45)" : "rgba(239, 83, 80, 0.45)",
+      }))
+    );
+    chart.timeScale().fitContent();
 
-  if (!payload.count) {
-    setStatus("No bars for this selection.");
-    return;
+    if (!payload.count) {
+      baseStatus = "No bars for this selection.";
+      setStatus(baseStatus);
+      return;
+    }
+    const from = formatExchange(payload.from);
+    const to = formatExchange(payload.to);
+    baseStatus = `${payload.count.toLocaleString()} bars · ${from} → ${to}`;
+    setStatus(baseStatus);
+  } finally {
+    if (token === loadToken) chartLoading = false;
   }
-  const from = formatExchange(payload.from);
-  const to = formatExchange(payload.to);
-  setStatus(`${payload.count.toLocaleString()} bars · ${from} → ${to}`);
 }
 
 async function refresh() {
@@ -244,6 +383,24 @@ async function refresh() {
     setStatus(error.message || "Request failed", true);
   }
 }
+
+clearRangeButton.addEventListener("click", deleteRange);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Delete" && event.key !== "Escape") return;
+  const tag = event.target && event.target.tagName;
+  if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+  if (rangeStart == null) return;
+  event.preventDefault();
+  deleteRange();
+});
+
+chart.subscribeClick((param) => {
+  if (chartLoading) return;
+  const index = barIndexAt(param);
+  if (index == null) return;
+  selectCandle(index);
+});
 
 tableSelect.addEventListener("change", refresh);
 intervalSelect.addEventListener("change", () => {

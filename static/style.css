@@ -66,6 +66,27 @@ select {
   font: inherit;
 }
 
+button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  align-self: end;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #8b93a7;
+}
+
+button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.55;
+}
+
 #status {
   margin: 0 0 6px auto;
   color: var(--muted);
