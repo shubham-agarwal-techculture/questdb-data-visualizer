@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuestDB OHLC</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://unpkg.com/lightweight-charts@5.0.9/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <h1>QuestDB OHLC</h1>
+    <label>
+      Table
+      <select id="table"></select>
+    </label>
+    <label>
+      Timeframe
+      <select id="interval">
+        <option value="1m">1m</option>
+        <option value="5m">5m</option>
+        <option value="15m" selected>15m</option>
+        <option value="30m">30m</option>
+        <option value="1h">1h</option>
+        <option value="1d">1d</option>
+      </select>
+    </label>
+    <label id="expiry-label" hidden>
+      Expiry
+      <select id="expiry"></select>
+    </label>
+    <label id="type-label" hidden>
+      Type
+      <select id="instrument-type">
+        <option value="CE">CE</option>
+        <option value="PE">PE</option>
+      </select>
+    </label>
+    <label id="strike-label" hidden>
+      Strike
+      <select id="strike"></select>
+    </label>
+    <p id="status">Loading tables…</p>
+  </header>
+  <div id="chart"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

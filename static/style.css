@@ -1,0 +1,82 @@
+:root {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --panel: #161b22;
+  --line: #2a3140;
+  --text: #d1d4dc;
+  --muted: #8b93a7;
+  --accent: #26a69a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 "Segoe UI", sans-serif;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px 16px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0 8px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  align-self: center;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+label[hidden] {
+  display: none;
+}
+
+select {
+  min-width: 160px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+
+#status {
+  margin: 0 0 6px auto;
+  color: var(--muted);
+  align-self: center;
+}
+
+#status.error {
+  color: #ef5350;
+}
+
+#chart {
+  flex: 1;
+  min-height: 420px;
+}
