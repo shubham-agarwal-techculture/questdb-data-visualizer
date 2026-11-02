@@ -1,5 +1,6 @@
 const tableSelect = document.querySelector("#table");
 const intervalSelect = document.querySelector("#interval");
+const dayInput = document.querySelector("#day");
 const expiryLabel = document.querySelector("#expiry-label");
 const expirySelect = document.querySelector("#expiry");
 const typeLabel = document.querySelector("#type-label");
@@ -145,6 +146,47 @@ function utcParts(time) {
 function formatExchange(time) {
   const parts = utcParts(time);
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function barDay(time) {
+  const parts = utcParts(time);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function dayBounds(day) {
+  let first = -1;
+  let last = -1;
+  for (let index = 0; index < bars.length; index += 1) {
+    if (barDay(bars[index].time) !== day) continue;
+    if (first < 0) first = index;
+    last = index;
+  }
+  return { first, last };
+}
+
+function applyDayView() {
+  if (!bars.length) return;
+  const total = `${bars.length.toLocaleString()} bars · ${formatExchange(bars[0].time)} → ${formatExchange(bars[bars.length - 1].time)}`;
+  const day = dayInput.value;
+  if (!day) {
+    chart.timeScale().fitContent();
+    baseStatus = total;
+    renderStatus();
+    return;
+  }
+  const { first, last } = dayBounds(day);
+  if (first < 0) {
+    chart.timeScale().fitContent();
+    baseStatus = `${total} · no bars on ${day}`;
+    renderStatus();
+    return;
+  }
+  chart.timeScale().setVisibleLogicalRange({
+    from: first - 0.5,
+    to: last + 0.5,
+  });
+  baseStatus = `${total} · showing ${formatExchange(bars[first].time)} → ${formatExchange(bars[last].time)}`;
+  renderStatus();
 }
 
 function formatTick(time, tickMarkType) {
@@ -359,17 +401,12 @@ async function loadChart() {
         color: bar.close >= bar.open ? "rgba(38, 166, 154, 0.45)" : "rgba(239, 83, 80, 0.45)",
       }))
     );
-    chart.timeScale().fitContent();
-
     if (!payload.count) {
       baseStatus = "No bars for this selection.";
       setStatus(baseStatus);
       return;
     }
-    const from = formatExchange(payload.from);
-    const to = formatExchange(payload.to);
-    baseStatus = `${payload.count.toLocaleString()} bars · ${from} → ${to}`;
-    setStatus(baseStatus);
+    applyDayView();
   } finally {
     if (token === loadToken) chartLoading = false;
   }
@@ -405,6 +442,13 @@ chart.subscribeClick((param) => {
 tableSelect.addEventListener("change", refresh);
 intervalSelect.addEventListener("change", () => {
   loadChart().catch((error) => setStatus(error.message || "Request failed", true));
+});
+dayInput.addEventListener("change", () => {
+  if (chartLoading || !bars.length) {
+    loadChart().catch((error) => setStatus(error.message || "Request failed", true));
+    return;
+  }
+  applyDayView();
 });
 expirySelect.addEventListener("change", refresh);
 typeSelect.addEventListener("change", refresh);

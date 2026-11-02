@@ -56,7 +56,8 @@ label[hidden] {
   display: none;
 }
 
-select {
+select,
+input[type="date"] {
   min-width: 160px;
   background: var(--bg);
   color: var(--text);
@@ -64,6 +65,7 @@ select {
   border-radius: 6px;
   padding: 6px 8px;
   font: inherit;
+  color-scheme: dark;
 }
 
 button {
